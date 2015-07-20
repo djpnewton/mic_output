@@ -13,7 +13,10 @@ namespace mic_output
     public partial class MainForm : Form
     {
         const int limit = 1000;
+        const int sampleCount = 20;
+        const int valueMax = 512;
         List<FixedSizedList<int>> splValues = new List<FixedSizedList<int>>();
+        List<float> splValuesAvg = new List<float>();
 
         public MainForm()
         {
@@ -40,8 +43,13 @@ namespace mic_output
                     for (int i = 0; i < vals.Length; i++)
                     {
                         if (splValues.Count < i + 1)
+                        {
                             splValues.Add(new FixedSizedList<int>(limit));
-                        splValues[i].Enqueue(Convert.ToInt32(vals[i]));
+                            splValuesAvg.Add(0);
+                        }
+                        var v = Convert.ToInt32(vals[i]);
+                        splValues[i].Enqueue(v);
+                        splValuesAvg[i] = splValuesAvg[i] + (v - splValuesAvg[i]) / sampleCount;
                     }
                 }
             }
@@ -49,8 +57,14 @@ namespace mic_output
             {
 
             }
+            catch (FormatException)
+            {
+                serialPort1.Close();
+                serialPort1.Open();
+            }
         }
 
+        Pen level = new Pen(Brushes.Green, 3);
         private void doubleBufferedPanel1_Paint(object sender, PaintEventArgs e)
         {
             var g = e.Graphics;
@@ -59,6 +73,8 @@ namespace mic_output
 
             lock (splValues)
             {
+                const int space = 5;
+
                 if (splValues.Count == 0)
                     return;
 
@@ -71,18 +87,28 @@ namespace mic_output
 
                     // draw mic values
                     int[] values = splValues[i].Copy();
-                    float L = -h + 10;
-                    float x = w * (i + 1);
-                    var originY = h - 5;
+                    float L = -h + space * 2;
+                    float r = w * (i + 1);
+                    float x = w * i;
+                    var originY = h - space;
 
+                    var xnext = r;
                     foreach (var v in values)
                     {
-                        var originX = x;
+                        var originX = xnext;
                         var destX = originX + 0.5f;
-                        var destY = originY + L * v / 512;
+                        var destY = originY + L * v / valueMax;
+                        if (destX < r - w)
+                            break;
                         g.DrawLine(Pens.Black, originX, originY, destX, destY);
-                        x -= 1;
+                        xnext -= 1;
                     }
+
+                    // draw mic avg
+                    var avg = splValuesAvg[i];
+                    var y = h - h * avg / valueMax - space;
+                    g.DrawLine(level, x, y, x + w, y);
+
                 }
             }
         }
